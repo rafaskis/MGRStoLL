@@ -84,11 +84,8 @@
                         <button id="copyAllBtn" class="hidden bg-slate-700 hover:bg-slate-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
                             📋 Copy All (CSV)
                         </button>
-                        <button id="exportKmlBtn" class="hidden bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold px-3 py-1.5 rounded-lg text-slate-950 font-bold transition">
-                            💾 Export KML
-                        </button>
                         <a id="mapAllBtn" target="_blank" class="hidden bg-blue-600 hover:bg-blue-500 text-xs font-semibold px-3 py-1.5 rounded-lg text-white transition">
-                            🗺️ Google Maps
+                            🗺️ Google Maps (All)
                         </a>
                     </div>
                 </div>
@@ -101,8 +98,16 @@
 
                 <!-- Active Conversion View (Split into Map & Table) -->
                 <div id="resultsWrapper" class="hidden flex-1 flex flex-col space-y-4 mt-4 h-full">
-                    <!-- Leaflet Map Container -->
-                    <div id="map" class="w-full h-64 rounded-xl border border-slate-700/50 overflow-hidden shadow-inner"></div>
+                    
+                    <!-- Map Wrapper (Enables smooth sizing transitions) -->
+                    <div class="relative w-full">
+                        <!-- Expand/Collapse Button -->
+                        <button id="toggleMapSizeBtn" class="absolute top-2 right-2 z-[1000] bg-slate-950/80 hover:bg-slate-950 border border-slate-700/60 text-slate-200 hover:text-emerald-400 text-xs font-bold px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1 shadow-lg">
+                            <span id="mapSizeIcon">🔍</span> <span id="mapSizeText">Expand Map</span>
+                        </button>
+                        <!-- Leaflet Map Container -->
+                        <div id="map" class="w-full h-64 rounded-xl border border-slate-700/50 overflow-hidden shadow-inner transition-[height] duration-300 ease-in-out"></div>
+                    </div>
 
                     <!-- Results Table Wrapper -->
                     <div class="flex-1 overflow-x-auto max-h-[250px]">
@@ -143,18 +148,21 @@
         const resultsWrapper = document.getElementById('resultsWrapper');
         const resultsTableBody = document.getElementById('resultsTableBody');
         const copyAllBtn = document.getElementById('copyAllBtn');
-        const exportKmlBtn = document.getElementById('exportKmlBtn');
         const mapAllBtn = document.getElementById('mapAllBtn');
+        const toggleMapSizeBtn = document.getElementById('toggleMapSizeBtn');
+        const mapSizeText = document.getElementById('mapSizeText');
+        const mapSizeIcon = document.getElementById('mapSizeIcon');
+        const mapContainer = document.getElementById('map');
         const toast = document.getElementById('toast');
 
         let convertedList = [];
         let map = null;
         let markerGroup = null;
+        let isMapExpanded = false;
 
-        // Initialize Map (lazy loaded when first conversion happens)
+        // Initialize Map
         function initMap() {
             if (map) return;
-            // Center roughly around Cyprus initially
             map = L.map('map').setView([35.1264, 33.4299], 9);
             
             const tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -162,11 +170,31 @@
                 attribution: '&copy; OpenStreetMap contributors'
             }).addTo(map);
 
-            // Apply dark mode CSS filter to tiles
             tiles.getContainer().classList.add('dark-tiles');
-            
             markerGroup = L.featureGroup().addTo(map);
         }
+
+        // Handle Map Expansion Trigger
+        toggleMapSizeBtn.addEventListener('click', () => {
+            isMapExpanded = !isMapExpanded;
+            if (isMapExpanded) {
+                mapContainer.classList.replace('h-64', 'h-[500px]');
+                mapSizeText.innerText = "Collapse Map";
+                mapSizeIcon.innerText = " shrink ";
+            } else {
+                mapContainer.classList.replace('h-[500px]', 'h-64');
+                mapSizeText.innerText = "Expand Map";
+                mapSizeIcon.innerText = "🔍";
+            }
+            
+            // Allow dynamic CSS transitions to settle, then adjust Leaflet boundaries
+            setTimeout(() => {
+                map.invalidateSize();
+                if (markerGroup && markerGroup.getBounds().isValid()) {
+                    map.fitBounds(markerGroup.getBounds(), { padding: [30, 30] });
+                }
+            }, 300);
+        });
 
         // Handle Checkbox Toggling
         customMGRSCheckbox.addEventListener('change', () => {
@@ -195,7 +223,6 @@
 
             let hasValidData = false;
 
-            // Make sure map container exists and is rendered
             initMap();
             if (markerGroup) markerGroup.clearLayers();
 
@@ -203,7 +230,6 @@
                 const trimmedLine = line.trim();
                 if (!trimmedLine) return; // Skip empty lines
 
-                // Strip interior spaces for coordinate calculations
                 const sanitizedCoord = trimmedLine.replace(/\s+/g, '');
                 let fullMGRSString = customMGRSCheckbox.checked ? sanitizedCoord : "36SWD" + sanitizedCoord;
 
@@ -244,16 +270,16 @@
 
                 // Column 3: Actions
                 const tdActions = document.createElement('td');
-                tdActions.className = "py-3 text-right space-x-1 whitespace-nowrap";
+                tdActions.className = "py-3 text-right space-x-1.5 whitespace-nowrap";
 
                 if (isSuccess) {
-                    // Copy Row button
+                    // Action 1: Copy Coordinates
                     const inlineCopy = document.createElement('button');
                     inlineCopy.className = "bg-slate-700 hover:bg-slate-600 px-2 py-1 text-xs rounded transition text-slate-300";
                     inlineCopy.innerText = "Copy";
                     inlineCopy.onclick = () => copyText(`${lat}, ${lon}`);
 
-                    // Fly to point on map button
+                    // Action 2: Center on Leaflet Map
                     const inlineMap = document.createElement('button');
                     inlineMap.className = "inline-block bg-emerald-500 hover:bg-emerald-400 px-2 py-1 text-xs rounded transition text-slate-950 font-bold";
                     inlineMap.innerText = "Map";
@@ -261,8 +287,16 @@
                         map.flyTo([lat, lon], 14, { duration: 1.5 });
                     };
 
+                    // Action 3: Open in External Google Maps
+                    const inlineGmaps = document.createElement('a');
+                    inlineGmaps.className = "inline-block bg-blue-600 hover:bg-blue-500 px-2 py-1 text-xs rounded transition text-white font-semibold";
+                    inlineGmaps.innerText = "GMaps";
+                    inlineGmaps.target = "_blank";
+                    inlineGmaps.href = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+
                     tdActions.appendChild(inlineCopy);
                     tdActions.appendChild(inlineMap);
+                    tdActions.appendChild(inlineGmaps);
 
                     // Add Pin to Leaflet Map
                     const marker = L.marker([lat, lon]).addTo(markerGroup);
@@ -281,7 +315,6 @@
                 emptyState.classList.add('hidden');
                 resultsWrapper.classList.remove('hidden');
                 copyAllBtn.classList.remove('hidden');
-                exportKmlBtn.classList.remove('hidden');
                 setupMapAllLink();
 
                 // Force map resize check to render correctly inside dynamic layout
@@ -318,40 +351,6 @@
             copyText(csvContent);
         });
 
-        // Export All to KML File
-        exportKmlBtn.addEventListener('click', () => {
-            if (convertedList.length === 0) return;
-
-            let kml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-            kml += `<kml xmlns="http://www.opengis.net/kml/2.2">\n`;
-            kml += `  <Document>\n`;
-            kml += `    <name>Converted MGRS Points</name>\n`;
-            kml += `    <description>MGRS to Lat/Lon Conversions via RN MGRS Converter</description>\n`;
-
-            convertedList.forEach(item => {
-                kml += `    <Placemark>\n`;
-                kml += `      <name>${item.raw}</name>\n`;
-                kml += `      <description>Coordinates: ${item.formatted}</description>\n`;
-                kml += `      <Point>\n`;
-                kml += `        <coordinates>${item.lon},${item.lat},0</coordinates>\n`;
-                kml += `      </Point>\n`;
-                kml += `    </Placemark>\n`;
-            });
-
-            kml += `  </Document>\n`;
-            kml += `</kml>`;
-
-            const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'converted_mgrs_coordinates.kml';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        });
-
         // Create unified Google Map route with all pins
         function setupMapAllLink() {
             if (convertedList.length === 0) {
@@ -375,8 +374,15 @@
             emptyState.classList.remove('hidden');
             resultsWrapper.classList.add('hidden');
             copyAllBtn.classList.add('hidden');
-            exportKmlBtn.classList.add('hidden');
             mapAllBtn.classList.add('hidden');
+            
+            // Reset map expansion size if cleared
+            if (isMapExpanded) {
+                mapContainer.classList.replace('h-[500px]', 'h-64');
+                mapSizeText.innerText = "Expand Map";
+                mapSizeIcon.innerText = "🔍";
+                isMapExpanded = false;
+            }
         }
     </script>
 </body>
