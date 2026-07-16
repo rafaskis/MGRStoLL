@@ -6,14 +6,24 @@
     <title>RN MGRS Converter</title>
     <!-- Tailwind CSS for modern, clean UI -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS for Map Styling -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <!-- Geodesy library components -->
     <script src="https://cdn.jsdelivr.net/npm/geodesy@2.4.0/mgrs.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/geodesy@2.4.0/utm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/geodesy@2.4.0/latlon-ellipsoidal-datum.js"></script>
+    <style>
+        /* Custom styling to turn standard Leaflet tiles into Dark Mode */
+        .dark-tiles {
+            filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+        }
+    </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-8">
 
-    <div class="max-w-6xl mx-auto space-y-6">
+    <div class="max-w-7xl mx-auto space-y-6">
         <!-- Header -->
         <header class="text-center md:text-left">
             <h1 class="text-3xl font-extrabold text-emerald-400">RN MGRS to L&L Converter</h1>
@@ -67,15 +77,18 @@
             </div>
 
             <!-- Right Side: Output Results (7 Columns on Large Screens) -->
-            <div class="lg:col-span-7 bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700/60 flex flex-col min-h-[450px]">
+            <div class="lg:col-span-7 bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700/60 flex flex-col min-h-[550px]">
                 <div class="flex items-center justify-between pb-4 border-b border-slate-700/50">
                     <h2 class="text-lg font-bold text-slate-200">Conversion Results</h2>
                     <div class="flex space-x-2">
                         <button id="copyAllBtn" class="hidden bg-slate-700 hover:bg-slate-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
                             📋 Copy All (CSV)
                         </button>
+                        <button id="exportKmlBtn" class="hidden bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold px-3 py-1.5 rounded-lg text-slate-950 font-bold transition">
+                            💾 Export KML
+                        </button>
                         <a id="mapAllBtn" target="_blank" class="hidden bg-blue-600 hover:bg-blue-500 text-xs font-semibold px-3 py-1.5 rounded-lg text-white transition">
-                            🗺️ Map All Together
+                            🗺️ Google Maps
                         </a>
                     </div>
                 </div>
@@ -83,23 +96,29 @@
                 <!-- Empty State -->
                 <div id="emptyState" class="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-500">
                     <span class="text-4xl mb-2">📍</span>
-                    <p class="text-sm">Input coordinates and click Convert to see the results here.</p>
+                    <p class="text-sm">Input coordinates and click Convert to see the results and map visualization here.</p>
                 </div>
 
-                <!-- Results Table Wrapper -->
-                <div id="resultsWrapper" class="hidden flex-1 overflow-x-auto mt-4">
-                    <table class="w-full text-left text-sm border-collapse">
-                        <thead>
-                            <tr class="text-slate-400 border-b border-slate-700/50">
-                                <th class="pb-2 font-semibold">Raw Input</th>
-                                <th class="pb-2 font-semibold">Dec. Coordinates</th>
-                                <th class="pb-2 font-semibold text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="resultsTableBody" class="divide-y divide-slate-700/30">
-                            <!-- Injected Dynamically -->
-                        </tbody>
-                    </table>
+                <!-- Active Conversion View (Split into Map & Table) -->
+                <div id="resultsWrapper" class="hidden flex-1 flex flex-col space-y-4 mt-4 h-full">
+                    <!-- Leaflet Map Container -->
+                    <div id="map" class="w-full h-64 rounded-xl border border-slate-700/50 overflow-hidden shadow-inner"></div>
+
+                    <!-- Results Table Wrapper -->
+                    <div class="flex-1 overflow-x-auto max-h-[250px]">
+                        <table class="w-full text-left text-sm border-collapse">
+                            <thead class="sticky top-0 bg-slate-800 z-10">
+                                <tr class="text-slate-400 border-b border-slate-700/50">
+                                    <th class="pb-2 font-semibold">Raw Input</th>
+                                    <th class="pb-2 font-semibold">Dec. Coordinates</th>
+                                    <th class="pb-2 font-semibold text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="resultsTableBody" class="divide-y divide-slate-700/30">
+                                <!-- Injected Dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -124,10 +143,30 @@
         const resultsWrapper = document.getElementById('resultsWrapper');
         const resultsTableBody = document.getElementById('resultsTableBody');
         const copyAllBtn = document.getElementById('copyAllBtn');
+        const exportKmlBtn = document.getElementById('exportKmlBtn');
         const mapAllBtn = document.getElementById('mapAllBtn');
         const toast = document.getElementById('toast');
 
         let convertedList = [];
+        let map = null;
+        let markerGroup = null;
+
+        // Initialize Map (lazy loaded when first conversion happens)
+        function initMap() {
+            if (map) return;
+            // Center roughly around Cyprus initially
+            map = L.map('map').setView([35.1264, 33.4299], 9);
+            
+            const tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Apply dark mode CSS filter to tiles
+            tiles.getContainer().classList.add('dark-tiles');
+            
+            markerGroup = L.featureGroup().addTo(map);
+        }
 
         // Handle Checkbox Toggling
         customMGRSCheckbox.addEventListener('change', () => {
@@ -144,6 +183,7 @@
         clearBtn.addEventListener('click', () => {
             batchInput.value = "";
             convertedList = [];
+            if (markerGroup) markerGroup.clearLayers();
             renderEmptyState();
         });
 
@@ -154,6 +194,10 @@
             convertedList = [];
 
             let hasValidData = false;
+
+            // Make sure map container exists and is rendered
+            initMap();
+            if (markerGroup) markerGroup.clearLayers();
 
             rawLines.forEach((line) => {
                 const trimmedLine = line.trim();
@@ -173,9 +217,9 @@
                     const utmCoord = mgrsCoord.toUtm();
                     const latLonCoord = utmCoord.toLatLon();
 
-                    lat = latLonCoord.lat.toFixed(8);
-                    lon = latLonCoord.lon.toFixed(8);
-                    outputText = `${lat},${lon}`;
+                    lat = parseFloat(latLonCoord.lat.toFixed(8));
+                    lon = parseFloat(latLonCoord.lon.toFixed(8));
+                    outputText = `${lat}, ${lon}`;
                     isSuccess = true;
                     hasValidData = true;
 
@@ -200,7 +244,7 @@
 
                 // Column 3: Actions
                 const tdActions = document.createElement('td');
-                tdActions.className = "py-3 text-right space-x-1";
+                tdActions.className = "py-3 text-right space-x-1 whitespace-nowrap";
 
                 if (isSuccess) {
                     // Copy Row button
@@ -209,15 +253,20 @@
                     inlineCopy.innerText = "Copy";
                     inlineCopy.onclick = () => copyText(`${lat}, ${lon}`);
 
-                    // Single map link
-                    const inlineMap = document.createElement('a');
-                    inlineMap.className = "inline-block bg-blue-600 hover:bg-blue-500 px-2 py-1 text-xs rounded transition text-white font-semibold";
+                    // Fly to point on map button
+                    const inlineMap = document.createElement('button');
+                    inlineMap.className = "inline-block bg-emerald-500 hover:bg-emerald-400 px-2 py-1 text-xs rounded transition text-slate-950 font-bold";
                     inlineMap.innerText = "Map";
-                    inlineMap.target = "_blank";
-                    inlineMap.href = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+                    inlineMap.onclick = () => {
+                        map.flyTo([lat, lon], 14, { duration: 1.5 });
+                    };
 
                     tdActions.appendChild(inlineCopy);
                     tdActions.appendChild(inlineMap);
+
+                    // Add Pin to Leaflet Map
+                    const marker = L.marker([lat, lon]).addTo(markerGroup);
+                    marker.bindPopup(`<strong class="text-slate-900">${trimmedLine}</strong><br/><span class="text-slate-600 font-mono">${lat}, ${lon}</span>`);
                 } else {
                     tdActions.innerHTML = `<span class="text-slate-600 text-xs">-</span>`;
                 }
@@ -232,7 +281,16 @@
                 emptyState.classList.add('hidden');
                 resultsWrapper.classList.remove('hidden');
                 copyAllBtn.classList.remove('hidden');
+                exportKmlBtn.classList.remove('hidden');
                 setupMapAllLink();
+
+                // Force map resize check to render correctly inside dynamic layout
+                setTimeout(() => {
+                    map.invalidateSize();
+                    if (markerGroup.getBounds().isValid()) {
+                        map.fitBounds(markerGroup.getBounds(), { padding: [30, 30] });
+                    }
+                }, 100);
             } else {
                 renderEmptyState();
                 if(rawLines.some(l => l.trim() !== '')) {
@@ -260,19 +318,51 @@
             copyText(csvContent);
         });
 
+        // Export All to KML File
+        exportKmlBtn.addEventListener('click', () => {
+            if (convertedList.length === 0) return;
+
+            let kml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+            kml += `<kml xmlns="http://www.opengis.net/kml/2.2">\n`;
+            kml += `  <Document>\n`;
+            kml += `    <name>Converted MGRS Points</name>\n`;
+            kml += `    <description>MGRS to Lat/Lon Conversions via RN MGRS Converter</description>\n`;
+
+            convertedList.forEach(item => {
+                kml += `    <Placemark>\n`;
+                kml += `      <name>${item.raw}</name>\n`;
+                kml += `      <description>Coordinates: ${item.formatted}</description>\n`;
+                kml += `      <Point>\n`;
+                kml += `        <coordinates>${item.lon},${item.lat},0</coordinates>\n`;
+                kml += `      </Point>\n`;
+                kml += `    </Placemark>\n`;
+            });
+
+            kml += `  </Document>\n`;
+            kml += `</kml>`;
+
+            const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'converted_mgrs_coordinates.kml';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
         // Create unified Google Map route with all pins
         function setupMapAllLink() {
             if (convertedList.length === 0) {
                 mapAllBtn.classList.add('hidden');
                 return;
             }
-            // Generate Google Maps pin list or build a directions route showing multiple stops
             const pins = convertedList.map(item => item.formatted);
             
             if (pins.length === 1) {
                 mapAllBtn.href = `https://www.google.com/maps/search/?api=1&query=${pins[0]}`;
             } else {
-                // If more than one, we drop pins using the search query for coordinate clustering or directions route structure
                 const origin = pins[0];
                 const destination = pins[pins.length - 1];
                 const waypoints = pins.slice(1, -1).join('|');
@@ -285,6 +375,7 @@
             emptyState.classList.remove('hidden');
             resultsWrapper.classList.add('hidden');
             copyAllBtn.classList.add('hidden');
+            exportKmlBtn.classList.add('hidden');
             mapAllBtn.classList.add('hidden');
         }
     </script>
