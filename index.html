@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RN MGRS Converter</title>
+    <!-- Tailwind CSS for modern, clean UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Geodesy library components -->
+    <script src="https://cdn.jsdelivr.net/npm/geodesy@2.4.0/mgrs.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/geodesy@2.4.0/utm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/geodesy@2.4.0/latlon-ellipsoidal-datum.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-8">
+
+    <div class="max-w-6xl mx-auto space-y-6">
+        <!-- Header -->
+        <header class="text-center md:text-left">
+            <h1 class="text-3xl font-extrabold text-emerald-400">RN MGRS to L&L Converter</h1>
+            <p class="text-slate-400 text-sm mt-1">Convert multiple military grid coordinates to Latitude/Longitude instantly. Entirely client-side and secure. Cyprus prefix (36S WD) by default.</p>
+        </header>
+
+        <!-- Main Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Left Side: Inputs (5 Columns on Large Screens) -->
+            <div class="lg:col-span-5 bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700/60 flex flex-col justify-between">
+                <div>
+                    <!-- Settings -->
+                    <div class="mb-6 space-y-4">
+                        <div class="flex items-center justify-between p-3 bg-slate-950/60 border border-slate-700/50 rounded-xl">
+                            <div class="flex items-center space-x-3">
+                                <input type="checkbox" id="customMGRS" 
+                                    class="w-5 h-5 rounded text-emerald-500 bg-slate-950 border-slate-700 focus:ring-emerald-500 focus:ring-offset-slate-800">
+                                <label for="customMGRS" class="text-sm font-semibold text-slate-200 cursor-pointer select-none">
+                                    Require Full MGRS Input
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div id="prefixNotice" class="bg-emerald-950/20 border border-emerald-800/40 rounded-xl p-3 text-xs text-emerald-400 flex items-center space-x-2">
+                            <span>ℹ️</span>
+                            <span>When unchecked, system automatically prefixes <strong class="underline">36S WD</strong> to your coordinate digits (e.g., pasting <code class="bg-slate-900/80 px-1 py-0.5 rounded text-slate-200">1234 5678</code> converts as <code class="bg-slate-900/80 px-1 py-0.5 rounded text-slate-200">36S WD 1234 5678</code>).</span>
+                        </div>
+                    </div>
+
+                    <!-- Text Area Input -->
+                    <div class="space-y-2">
+                        <label for="batchInput" class="block text-sm font-medium text-slate-300">
+                            Paste Coordinates (one per line):
+                        </label>
+                        <textarea id="batchInput" rows="10" 
+                            class="w-full bg-slate-950 border border-slate-700/80 rounded-xl p-4 text-emerald-300 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent placeholder-slate-600"
+                            placeholder="Example lines (Default Active):&#10;1234 5678&#10;2345 6789&#10;3456 7890"></textarea>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex space-x-3">
+                    <button id="clearBtn" class="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold py-3 rounded-xl transition duration-150">
+                        Clear Input
+                    </button>
+                    <button id="convertBtn" 
+                        class="flex-1 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-slate-950 font-bold py-3 rounded-xl transition duration-150 shadow-lg shadow-emerald-500/20">
+                        🚀 Convert All
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Side: Output Results (7 Columns on Large Screens) -->
+            <div class="lg:col-span-7 bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700/60 flex flex-col min-h-[450px]">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-700/50">
+                    <h2 class="text-lg font-bold text-slate-200">Conversion Results</h2>
+                    <div class="flex space-x-2">
+                        <button id="copyAllBtn" class="hidden bg-slate-700 hover:bg-slate-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+                            📋 Copy All (CSV)
+                        </button>
+                        <a id="mapAllBtn" target="_blank" class="hidden bg-blue-600 hover:bg-blue-500 text-xs font-semibold px-3 py-1.5 rounded-lg text-white transition">
+                            🗺️ Map All Together
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div id="emptyState" class="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-500">
+                    <span class="text-4xl mb-2">📍</span>
+                    <p class="text-sm">Input coordinates and click Convert to see the results here.</p>
+                </div>
+
+                <!-- Results Table Wrapper -->
+                <div id="resultsWrapper" class="hidden flex-1 overflow-x-auto mt-4">
+                    <table class="w-full text-left text-sm border-collapse">
+                        <thead>
+                            <tr class="text-slate-400 border-b border-slate-700/50">
+                                <th class="pb-2 font-semibold">Raw Input</th>
+                                <th class="pb-2 font-semibold">Dec. Coordinates</th>
+                                <th class="pb-2 font-semibold text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsTableBody" class="divide-y divide-slate-700/30">
+                            <!-- Injected Dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-5 right-5 bg-emerald-500 text-slate-950 font-semibold px-4 py-3 rounded-xl shadow-lg transform translate-y-20 opacity-0 transition duration-300 pointer-events-none">
+        Copied!
+    </div>
+
+    <script type="module">
+        import LatLon from 'https://cdn.jsdelivr.net/npm/geodesy@2.4.0/latlon-ellipsoidal-datum.js';
+        import Mgrs from 'https://cdn.jsdelivr.net/npm/geodesy@2.4.0/mgrs.js';
+
+        const customMGRSCheckbox = document.getElementById('customMGRS');
+        const prefixNotice = document.getElementById('prefixNotice');
+        const batchInput = document.getElementById('batchInput');
+        const clearBtn = document.getElementById('clearBtn');
+        const convertBtn = document.getElementById('convertBtn');
+        const emptyState = document.getElementById('emptyState');
+        const resultsWrapper = document.getElementById('resultsWrapper');
+        const resultsTableBody = document.getElementById('resultsTableBody');
+        const copyAllBtn = document.getElementById('copyAllBtn');
+        const mapAllBtn = document.getElementById('mapAllBtn');
+        const toast = document.getElementById('toast');
+
+        let convertedList = [];
+
+        // Handle Checkbox Toggling
+        customMGRSCheckbox.addEventListener('change', () => {
+            if (customMGRSCheckbox.checked) {
+                prefixNotice.classList.add('hidden');
+                batchInput.placeholder = "Example lines (Full MGRS Active):\n36S WD 12345 67890\n30U EV 12345 12345";
+            } else {
+                prefixNotice.classList.remove('hidden');
+                batchInput.placeholder = "Example lines (Default Active):\n1234 5678\n2345 6789\n3456 7890";
+            }
+        });
+
+        // Clear Trigger
+        clearBtn.addEventListener('click', () => {
+            batchInput.value = "";
+            convertedList = [];
+            renderEmptyState();
+        });
+
+        // Core conversion batch process
+        convertBtn.addEventListener('click', () => {
+            const rawLines = batchInput.value.split('\n');
+            resultsTableBody.innerHTML = '';
+            convertedList = [];
+
+            let hasValidData = false;
+
+            rawLines.forEach((line) => {
+                const trimmedLine = line.trim();
+                if (!trimmedLine) return; // Skip empty lines
+
+                // Strip interior spaces for coordinate calculations
+                const sanitizedCoord = trimmedLine.replace(/\s+/g, '');
+                let fullMGRSString = customMGRSCheckbox.checked ? sanitizedCoord : "36SWD" + sanitizedCoord;
+
+                let outputText = "";
+                let lat = null;
+                let lon = null;
+                let isSuccess = false;
+
+                try {
+                    const mgrsCoord = Mgrs.parse(fullMGRSString);
+                    const utmCoord = mgrsCoord.toUtm();
+                    const latLonCoord = utmCoord.toLatLon();
+
+                    lat = latLonCoord.lat.toFixed(8);
+                    lon = latLonCoord.lon.toFixed(8);
+                    outputText = `${lat},${lon}`;
+                    isSuccess = true;
+                    hasValidData = true;
+
+                    convertedList.push({ raw: trimmedLine, formatted: `${lat},${lon}`, lat, lon });
+                } catch (e) {
+                    outputText = "❌ Invalid MGRS format";
+                }
+
+                // Render Row
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-800/40 transition duration-100";
+                
+                // Column 1: Raw Input
+                const tdRaw = document.createElement('td');
+                tdRaw.className = "py-3 font-mono text-slate-400";
+                tdRaw.innerText = trimmedLine;
+
+                // Column 2: Coordinate Outcome
+                const tdResult = document.createElement('td');
+                tdResult.className = `py-3 font-mono font-bold ${isSuccess ? 'text-emerald-400' : 'text-red-400 text-xs'}`;
+                tdResult.innerText = outputText;
+
+                // Column 3: Actions
+                const tdActions = document.createElement('td');
+                tdActions.className = "py-3 text-right space-x-1";
+
+                if (isSuccess) {
+                    // Copy Row button
+                    const inlineCopy = document.createElement('button');
+                    inlineCopy.className = "bg-slate-700 hover:bg-slate-600 px-2 py-1 text-xs rounded transition text-slate-300";
+                    inlineCopy.innerText = "Copy";
+                    inlineCopy.onclick = () => copyText(`${lat}, ${lon}`);
+
+                    // Single map link
+                    const inlineMap = document.createElement('a');
+                    inlineMap.className = "inline-block bg-blue-600 hover:bg-blue-500 px-2 py-1 text-xs rounded transition text-white font-semibold";
+                    inlineMap.innerText = "Map";
+                    inlineMap.target = "_blank";
+                    inlineMap.href = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+
+                    tdActions.appendChild(inlineCopy);
+                    tdActions.appendChild(inlineMap);
+                } else {
+                    tdActions.innerHTML = `<span class="text-slate-600 text-xs">-</span>`;
+                }
+
+                tr.appendChild(tdRaw);
+                tr.appendChild(tdResult);
+                tr.appendChild(tdActions);
+                resultsTableBody.appendChild(tr);
+            });
+
+            if (hasValidData) {
+                emptyState.classList.add('hidden');
+                resultsWrapper.classList.remove('hidden');
+                copyAllBtn.classList.remove('hidden');
+                setupMapAllLink();
+            } else {
+                renderEmptyState();
+                if(rawLines.some(l => l.trim() !== '')) {
+                     alert("No valid coordinates could be resolved. Please verify formatting.");
+                }
+            }
+        });
+
+        // Copy Text Helper & Trigger Toast
+        function copyText(val) {
+            navigator.clipboard.writeText(val).then(() => {
+                toast.classList.replace('translate-y-20', 'translate-y-0');
+                toast.classList.replace('opacity-0', 'opacity-100');
+                setTimeout(() => {
+                    toast.classList.replace('translate-y-0', 'translate-y-20');
+                    toast.classList.replace('opacity-100', 'opacity-0');
+                }, 1500);
+            });
+        }
+
+        // Copy All List to CSV
+        copyAllBtn.addEventListener('click', () => {
+            if (convertedList.length === 0) return;
+            const csvContent = convertedList.map(item => `"${item.raw}","${item.formatted}"`).join('\n');
+            copyText(csvContent);
+        });
+
+        // Create unified Google Map route with all pins
+        function setupMapAllLink() {
+            if (convertedList.length === 0) {
+                mapAllBtn.classList.add('hidden');
+                return;
+            }
+            // Generate Google Maps pin list or build a directions route showing multiple stops
+            const pins = convertedList.map(item => item.formatted);
+            
+            if (pins.length === 1) {
+                mapAllBtn.href = `https://www.google.com/maps/search/?api=1&query=${pins[0]}`;
+            } else {
+                // If more than one, we drop pins using the search query for coordinate clustering or directions route structure
+                const origin = pins[0];
+                const destination = pins[pins.length - 1];
+                const waypoints = pins.slice(1, -1).join('|');
+                mapAllBtn.href = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypoints}&travelmode=driving`;
+            }
+            mapAllBtn.classList.remove('hidden');
+        }
+
+        function renderEmptyState() {
+            emptyState.classList.remove('hidden');
+            resultsWrapper.classList.add('hidden');
+            copyAllBtn.classList.add('hidden');
+            mapAllBtn.classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
