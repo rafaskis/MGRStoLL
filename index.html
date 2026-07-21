@@ -99,12 +99,18 @@
                 <!-- Active Conversion View (Split into Map & Table) -->
                 <div id="resultsWrapper" class="hidden flex-1 flex flex-col space-y-4 mt-4 h-full">
                     
-                    <!-- Map Wrapper (Enables smooth sizing transitions) -->
-                    <div class="relative w-full">
-                        <!-- Expand/Collapse Button -->
-                        <button id="toggleMapSizeBtn" class="absolute top-2 right-2 z-[1000] bg-slate-950/80 hover:bg-slate-950 border border-slate-700/60 text-slate-200 hover:text-emerald-400 text-xs font-bold px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1 shadow-lg">
-                            <span id="mapSizeIcon">🔍</span> <span id="mapSizeText">Expand Map</span>
-                        </button>
+                    <!-- Map Wrapper Container -->
+                    <div id="mapWrapper" class="relative w-full">
+                        <!-- Control Buttons (Expand & Full Screen) -->
+                        <div class="absolute top-2 right-2 z-[1000] flex space-x-2">
+                            <button id="toggleMapSizeBtn" class="bg-slate-950/80 hover:bg-slate-950 border border-slate-700/60 text-slate-200 hover:text-emerald-400 text-xs font-bold px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1 shadow-lg">
+                                <span id="mapSizeIcon">🔍</span> <span id="mapSizeText">Expand Map</span>
+                            </button>
+                            <button id="fullscreenMapBtn" class="bg-slate-950/80 hover:bg-slate-950 border border-slate-700/60 text-slate-200 hover:text-emerald-400 text-xs font-bold px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1 shadow-lg">
+                                <span>⛶</span> <span id="fullscreenText">Fullscreen</span>
+                            </button>
+                        </div>
+                        
                         <!-- Leaflet Map Container -->
                         <div id="map" class="w-full h-64 rounded-xl border border-slate-700/50 overflow-hidden shadow-inner transition-[height] duration-300 ease-in-out"></div>
                     </div>
@@ -131,7 +137,7 @@
     </div>
 
     <!-- Toast Notification -->
-    <div id="toast" class="fixed bottom-5 right-5 bg-emerald-500 text-slate-950 font-semibold px-4 py-3 rounded-xl shadow-lg transform translate-y-20 opacity-0 transition duration-300 pointer-events-none">
+    <div id="toast" class="fixed bottom-5 right-5 bg-emerald-500 text-slate-950 font-semibold px-4 py-3 rounded-xl shadow-lg transform translate-y-20 opacity-0 transition duration-300 pointer-events-none z-[9999]">
         Copied!
     </div>
 
@@ -152,6 +158,9 @@
         const toggleMapSizeBtn = document.getElementById('toggleMapSizeBtn');
         const mapSizeText = document.getElementById('mapSizeText');
         const mapSizeIcon = document.getElementById('mapSizeIcon');
+        const fullscreenMapBtn = document.getElementById('fullscreenMapBtn');
+        const fullscreenText = document.getElementById('fullscreenText');
+        const mapWrapper = document.getElementById('mapWrapper');
         const mapContainer = document.getElementById('map');
         const toast = document.getElementById('toast');
 
@@ -174,7 +183,7 @@
             markerGroup = L.featureGroup().addTo(map);
         }
 
-        // Handle Map Expansion Trigger
+        // Handle Map Height Expansion Trigger
         toggleMapSizeBtn.addEventListener('click', () => {
             isMapExpanded = !isMapExpanded;
             if (isMapExpanded) {
@@ -187,7 +196,6 @@
                 mapSizeIcon.innerText = "🔍";
             }
             
-            // Allow dynamic CSS transitions to settle, then adjust Leaflet boundaries
             setTimeout(() => {
                 map.invalidateSize();
                 if (markerGroup && markerGroup.getBounds().isValid()) {
@@ -195,6 +203,40 @@
                 }
             }, 300);
         });
+
+        // Handle Native Full Screen Toggle
+        fullscreenMapBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                if (mapWrapper.requestFullscreen) {
+                    mapWrapper.requestFullscreen();
+                } else if (mapWrapper.webkitRequestFullscreen) { /* Safari */
+                    mapWrapper.webkitRequestFullscreen();
+                } else if (mapWrapper.msRequestFullscreen) { /* IE11 */
+                    mapWrapper.msRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        });
+
+        // Listen for browser fullscreen changes (via Esc key or button)
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+        function handleFullscreenChange() {
+            if (document.fullscreenElement) {
+                mapContainer.classList.add('!h-screen');
+                fullscreenText.innerText = "Exit Fullscreen";
+            } else {
+                mapContainer.classList.remove('!h-screen');
+                fullscreenText.innerText = "Fullscreen";
+            }
+            setTimeout(() => {
+                if (map) map.invalidateSize();
+            }, 200);
+        }
 
         // Handle Checkbox Toggling
         customMGRSCheckbox.addEventListener('change', () => {
@@ -317,7 +359,6 @@
                 copyAllBtn.classList.remove('hidden');
                 setupMapAllLink();
 
-                // Force map resize check to render correctly inside dynamic layout
                 setTimeout(() => {
                     map.invalidateSize();
                     if (markerGroup.getBounds().isValid()) {
@@ -376,7 +417,6 @@
             copyAllBtn.classList.add('hidden');
             mapAllBtn.classList.add('hidden');
             
-            // Reset map expansion size if cleared
             if (isMapExpanded) {
                 mapContainer.classList.replace('h-[500px]', 'h-64');
                 mapSizeText.innerText = "Expand Map";
